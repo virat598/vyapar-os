@@ -3,16 +3,18 @@
 import React, { useState, useEffect } from "react";
 import { formatINR } from "@/lib/currency";
 import { StockStatusBadge } from "@/components/common/Badge";
-import { Plus, Search, Boxes, Download, Upload, SlidersHorizontal, AlertTriangle } from "lucide-react";
+import { Plus, Search, Boxes, Download, Upload, SlidersHorizontal, AlertTriangle, Pencil } from "lucide-react";
 
 interface ProductsViewProps {
   onOpenNewProduct: () => void;
+  onEditProduct?: (product: any) => void;
   onOpenStockAdjustment: (product?: any) => void;
   onNavigateTab: (tab: any) => void;
 }
 
 export function ProductsView({
   onOpenNewProduct,
+  onEditProduct,
   onOpenStockAdjustment,
   onNavigateTab,
 }: ProductsViewProps) {
@@ -47,8 +49,8 @@ export function ProductsView({
   const filtered = products.filter((p) => {
     const q = search.toLowerCase();
     const matchesSearch =
-      p.name.toLowerCase().includes(q) ||
-      p.sku.toLowerCase().includes(q) ||
+      p.name?.toLowerCase().includes(q) ||
+      p.sku?.toLowerCase().includes(q) ||
       (p.barcode && p.barcode.toLowerCase().includes(q));
     const matchesCat = !selectedCat || p.categoryId === selectedCat;
     const matchesLowStock = !lowStockOnly || p.currentStock <= p.minStockAlert;
@@ -191,12 +193,12 @@ export function ProductsView({
                 {filtered.map((prod) => (
                   <tr key={prod.id} className="hover:bg-slate-50/80 dark:hover:bg-slate-800/40">
                     <td className="py-3 px-4 font-mono font-semibold text-slate-900 dark:text-white">
-                      {prod.sku}
+                      {prod.sku || "—"}
                     </td>
                     <td className="py-3 px-4 font-medium text-slate-900 dark:text-white max-w-xs">
                       <p className="line-clamp-1">{prod.name}</p>
                       {prod.barcode && (
-                        <span className="text-[10px] text-slate-400 font-mono">EAN: {prod.barcode}</span>
+                        <span className="text-[10px] text-slate-400 font-mono">Barcode: {prod.barcode}</span>
                       )}
                     </td>
                     <td className="py-3 px-4 text-slate-500">{prod.categoryName || "General"}</td>
@@ -212,13 +214,24 @@ export function ProductsView({
                       <StockStatusBadge stock={prod.currentStock} alertThreshold={prod.minStockAlert} />
                     </td>
                     <td className="py-3 px-4 text-right">
-                      <button
-                        type="button"
-                        onClick={() => onOpenStockAdjustment(prod)}
-                        className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 rounded-lg transition-colors"
-                      >
-                        <SlidersHorizontal className="w-3 h-3" /> Adjust Stock
-                      </button>
+                      <div className="inline-flex items-center gap-1.5 justify-end">
+                        {onEditProduct && (
+                          <button
+                            type="button"
+                            onClick={() => onEditProduct(prod)}
+                            className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-emerald-700 bg-emerald-50 hover:bg-emerald-100 dark:bg-emerald-950/40 dark:text-emerald-400 dark:hover:bg-emerald-900/50 rounded-lg transition-colors"
+                          >
+                            <Pencil className="w-3 h-3" /> Edit
+                          </button>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => onOpenStockAdjustment(prod)}
+                          className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-slate-700 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700 rounded-lg transition-colors"
+                        >
+                          <SlidersHorizontal className="w-3 h-3" /> Adjust Stock
+                        </button>
+                      </div>
                     </td>
                   </tr>
                 ))}

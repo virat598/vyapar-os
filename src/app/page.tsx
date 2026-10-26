@@ -53,8 +53,19 @@ export default function App() {
   const [paymentPartyId, setPaymentPartyId] = useState<string | undefined>(undefined);
 
   const [isNewProductOpen, setIsNewProductOpen] = useState(false);
+  const [productToEdit, setProductToEdit] = useState<any | null>(null);
   const [isStockAdjustmentOpen, setIsStockAdjustmentOpen] = useState(false);
   const [selectedProductForAdjustment, setSelectedProductForAdjustment] = useState<any>(null);
+
+  const handleOpenAddProduct = () => {
+    setProductToEdit(null);
+    setIsNewProductOpen(true);
+  };
+
+  const handleOpenEditProduct = (product: any) => {
+    setProductToEdit(product);
+    setIsNewProductOpen(true);
+  };
 
   const [isNewBusinessOpen, setIsNewBusinessOpen] = useState(false);
   const [isAiAssistantOpen, setIsAiAssistantOpen] = useState(false);
@@ -357,7 +368,7 @@ export default function App() {
               onOpenNewSale={() => setIsNewSaleOpen(true)}
               onOpenNewPurchase={() => setIsNewPurchaseOpen(true)}
               onOpenNewPayment={handleOpenNewPayment}
-              onOpenNewProduct={() => setIsNewProductOpen(true)}
+              onOpenNewProduct={handleOpenAddProduct}
               onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
               onViewInvoice={(id) => setPrintInvoiceId(id)}
               onViewCustomerLedger={(id) => setLedgerCustomerId(id)}
@@ -381,7 +392,8 @@ export default function App() {
 
           {activeTab === "products" && (
             <ProductsView
-              onOpenNewProduct={() => setIsNewProductOpen(true)}
+              onOpenNewProduct={handleOpenAddProduct}
+              onEditProduct={handleOpenEditProduct}
               onOpenStockAdjustment={handleOpenStockAdjustment}
               onNavigateTab={(tab) => setActiveTab(tab)}
             />
@@ -532,9 +544,13 @@ export default function App() {
 
       <NewProductModal
         isOpen={isNewProductOpen}
-        onClose={() => setIsNewProductOpen(false)}
+        onClose={() => {
+          setIsNewProductOpen(false);
+          setProductToEdit(null);
+        }}
         onSuccess={loadAppData}
         categories={categories}
+        productToEdit={productToEdit}
       />
 
       <StockAdjustmentModal

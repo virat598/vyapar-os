@@ -111,11 +111,10 @@ export async function POST(req: Request) {
     if (!name || !name.trim()) {
       return NextResponse.json({ error: "Product name is required" }, { status: 400 });
     }
-    if (!sku || !sku.trim()) {
-      return NextResponse.json({ error: "SKU is required" }, { status: 400 });
-    }
 
-    const cleanSku = sku.trim().toUpperCase();
+    const cleanSku = (sku && sku.trim())
+      ? sku.trim().toUpperCase()
+      : `PRD-${Date.now().toString(36).toUpperCase()}`;
     const newProdId = "prod_" + Math.random().toString(36).substring(2, 10);
     const numInitialStock = Math.max(0, parseInt(initialStock, 10) || 0);
 
@@ -189,22 +188,23 @@ export async function PUT(req: Request) {
     }
 
     const body = await req.json();
-    const { id, name, sku, categoryId, unit, costPrice, sellingPrice, mrp, taxRate, minStockAlert, isActive } = body;
+    const { id, name, sku, categoryId, unit, costPrice, sellingPrice, mrp, taxRate, minStockAlert, isActive, barcode } = body;
 
     try {
       const [updated] = await db
         .update(products)
         .set({
           name: name?.trim(),
-          sku: sku?.trim().toUpperCase(),
-          categoryId: categoryId || null,
+          ...(sku ? { sku: sku.trim().toUpperCase() } : {}),
+          categoryId: categoryId !== undefined ? (categoryId || null) : undefined,
           unit,
-          costPrice: parseInt(costPrice, 10) || 0,
-          sellingPrice: parseInt(sellingPrice, 10) || 0,
-          mrp: parseInt(mrp, 10) || 0,
-          taxRate: parseInt(taxRate, 10) || 18,
-          minStockAlert: parseInt(minStockAlert, 10) || 10,
-          isActive: isActive !== undefined ? Boolean(isActive) : true,
+          costPrice: costPrice !== undefined ? parseInt(costPrice, 10) : undefined,
+          sellingPrice: sellingPrice !== undefined ? parseInt(sellingPrice, 10) : undefined,
+          mrp: mrp !== undefined ? parseInt(mrp, 10) : undefined,
+          taxRate: taxRate !== undefined ? parseInt(taxRate, 10) : undefined,
+          barcode: barcode !== undefined ? (barcode?.trim() || null) : undefined,
+          minStockAlert: minStockAlert !== undefined ? parseInt(minStockAlert, 10) : undefined,
+          isActive: isActive !== undefined ? Boolean(isActive) : undefined,
           updatedAt: new Date(),
         })
         .where(and(eq(products.id, id), eq(products.businessId, session.businessId)))
@@ -216,8 +216,14 @@ export async function PUT(req: Request) {
       if (p) {
         if (name) p.name = name.trim();
         if (sku) p.sku = sku.trim().toUpperCase();
+        if (categoryId !== undefined) p.categoryId = categoryId || null;
+        if (unit) p.unit = unit;
         if (costPrice !== undefined) p.costPrice = parseInt(costPrice, 10);
         if (sellingPrice !== undefined) p.sellingPrice = parseInt(sellingPrice, 10);
+        if (taxRate !== undefined) p.taxRate = parseInt(taxRate, 10);
+        if (barcode !== undefined) p.barcode = barcode?.trim() || null;
+        if (minStockAlert !== undefined) p.minStockAlert = parseInt(minStockAlert, 10);
+        if (isActive !== undefined) p.isActive = Boolean(isActive);
       }
       return NextResponse.json({ success: true, product: p });
     }
