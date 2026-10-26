@@ -1,0 +1,163 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // -------------------------------------------------------------
+    // Helper Authorization Functions
+    // -------------------------------------------------------------
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isUser(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Verify user belongs to the requested business workspace
+    function getMembership(bizId) {
+      return get(/databases/$(database)/documents/businesses/$(bizId)/memberships/$(request.auth.uid)).data;
+    }
+
+    function isMember(bizId) {
+      return isAuthenticated() && exists(/databases/$(database)/documents/businesses/$(bizId)/memberships/$(request.auth.uid));
+    }
+
+    function getRole(bizId) {
+      return getMembership(bizId).role;
+    }
+
+    function isOwner(bizId) {
+      return isMember(bizId) && getRole(bizId) == 'owner';
+    }
+
+    function isAdmin(bizId) {
+      return isMember(bizId) && (getRole(bizId) == 'owner' || getRole(bizId) == 'admin');
+    }
+
+    function isManager(bizId) {
+      return isMember(bizId) && (getRole(bizId) in ['owner', 'admin', 'manager']);
+    }
+
+    function isAccountant(bizId) {
+      return isMember(bizId) && (getRole(bizId) in ['owner', 'admin', 'manager', 'accountant']);
+    }
+
+    function isSalesperson(bizId) {
+      return isMember(bizId) && (getRole(bizId) in ['owner', 'admin', 'manager', 'salesperson']);
+    }
+
+    // Default deny-all root rule
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // -------------------------------------------------------------
+    // User Profiles
+    // -------------------------------------------------------------
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isUser(userId);
+      allow delete: if false;
+    }
+
+    // -------------------------------------------------------------
+    // Multi-Tenant Business Workspaces & Subcollections
+    // -------------------------------------------------------------
+    match /businesses/{bizId} {
+      // Any member of this business can read company profile
+      allow read: if isMember(bizId);
+      allow create: if isAuthenticated();
+      allow update: if isAdmin(bizId);
+      allow delete: if isOwner(bizId);
+
+      // Memberships & Roles
+      match /memberships/{userId} {
+        allow read: if isMember(bizId);
+        allow create: if isAdmin(bizId) || (request.auth.uid == userId && !exists(/databases/$(database)/documents/businesses/$(bizId)));
+        allow update: if isOwner(bizId) || (isAdmin(bizId) && resource.data.role != 'owner' && request.resource.data.role != 'owner');
+        allow delete: if isAdmin(bizId) && resource.data.role != 'owner';
+      }
+
+      // Categories
+      match /categories/{catId} {
+        allow read: if isMember(bizId);
+        allow create, update: if isManager(bizId);
+        allow delete: if isAdmin(bizId);
+      }
+
+      // Products & Inventory
+      match /products/{prodId} {
+        allow read: if isMember(bizId);
+        allow create, update: if isManager(bizId);
+        allow delete: if isAdmin(bizId);
+      }
+
+      // Stock Movements (Immutable Audit Trail)
+      match /stockMovements/{movementId} {
+        allow read: if isMember(bizId);
+        allow create: if isManager(bizId);
+        allow update, delete: if false; // Immutable! Never rewrite stock history
+      }
+
+      // Customers & Retailers
+      match /customers/{customerId} {
+        allow read: if isMember(bizId);
+        allow create, update: if isSalesperson(bizId);
+        allow delete: if isAdmin(bizId);
+      }
+
+      // Suppliers & Vendors
+      match /suppliers/{supplierId} {
+        allow read: if isMember(bizId);
+        allow create, update: if isManager(bizId);
+        allow delete: if isAdmin(bizId);
+      }
+
+      // Sales & Tax Invoices
+      match /invoices/{invoiceId} {
+        allow read: if isMember(bizId);
+        allow create, update: if isSalesperson(bizId);
+        allow delete: if isAdmin(bizId);
+
+        match /items/{itemId} {
+          allow read: if isMember(bizId);
+          allow write: if isSalesperson(bizId);
+        }
+      }
+
+      // Purchases & Inward Bills
+      match /purchases/{purchaseId} {
+        allow read: if isMember(bizId);
+        allow create, update: if isManager(bizId);
+        allow delete: if isAdmin(bizId);
+
+        match /items/{itemId} {
+          allow read: if isMember(bizId);
+          allow write: if isManager(bizId);
+        }
+      }
+
+      // Payments & Receipts
+      match /payments/{paymentId} {
+        allow read: if isMember(bizId);
+        allow create: if isSalesperson(bizId) || isAccountant(bizId);
+        allow update, delete: if isAdmin(bizId);
+      }
+
+      // Operational Expenses
+      match /expenses/{expenseId} {
+        allow read: if isAccountant(bizId);
+        allow create: if isMember(bizId);
+        allow update, delete: if isAdmin(bizId);
+      }
+
+      // Audit Logs (Immutable)
+      match /auditLogs/{logId} {
+        allow read: if isAdmin(bizId);
+        allow create: if isMember(bizId);
+        allow update, delete: if false; // Immutable security audit logs
+      }
+    }
+  }
+}
