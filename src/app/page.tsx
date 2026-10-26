@@ -29,13 +29,13 @@ import { AiAssistantDrawer } from "@/components/modals/AiAssistantDrawer";
 import { AuthModal } from "@/components/modals/AuthModal";
 import { OnboardingModal } from "@/components/modals/OnboardingModal";
 
-import { UserSession, UserPersona, UserBusiness } from "@/lib/types";
-import { X, Sparkles, Building2, UserCheck, ShieldCheck } from "lucide-react";
+import { UserSession, UserBusiness } from "@/lib/types";
+import { isFirebaseConfigured, signInWithGoogle, signOutFirebase } from "@/lib/firebase";
+import { X, Sparkles, Building2, AlertCircle, ArrowRight } from "lucide-react";
 
 export default function App() {
   const [session, setSession] = useState<UserSession | null>(null);
   const [businesses, setBusinesses] = useState<UserBusiness[]>([]);
-  const [availablePersonas, setAvailablePersonas] = useState<UserPersona[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<NavTab>("dashboard");
 
@@ -66,6 +66,12 @@ export default function App() {
 
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
+  // Direct login form state
+  const [loginEmail, setLoginEmail] = useState("");
+  const [loginName, setLoginName] = useState("");
+  const [loginLoading, setLoginLoading] = useState(false);
+  const [loginError, setLoginError] = useState<string | null>(null);
+
   // Load Session and Master Options
   const loadAppData = async () => {
     try {
@@ -75,14 +81,13 @@ export default function App() {
       if (authData.authenticated && authData.session) {
         setSession(authData.session);
         setBusinesses(authData.businesses || []);
-        setAvailablePersonas(authData.availablePersonas || []);
 
         // Fetch options in parallel
         const [prodRes, custRes, supRes, catRes] = await Promise.all([
-          fetch("/api/products").then((r) => r.json()),
-          fetch("/api/customers").then((r) => r.json()),
-          fetch("/api/suppliers").then((r) => r.json()),
-          fetch("/api/categories").then((r) => r.json()),
+          fetch("/api/products").then((r) => r.json()).catch(() => ({ products: [] })),
+          fetch("/api/customers").then((r) => r.json()).catch(() => ({ customers: [] })),
+          fetch("/api/suppliers").then((r) => r.json()).catch(() => ({ suppliers: [] })),
+          fetch("/api/categories").then((r) => r.json()).catch(() => ({ categories: [] })),
         ]);
 
         setProducts(prodRes.products || []);
@@ -91,10 +96,10 @@ export default function App() {
         setCategories(catRes.categories || []);
       } else {
         setSession(null);
-        setAvailablePersonas(authData.availablePersonas || []);
       }
     } catch (err) {
       console.error("Error loading app data:", err);
+      setSession(null);
     } finally {
       setLoading(false);
     }
@@ -104,15 +109,88 @@ export default function App() {
     loadAppData();
   }, []);
 
-  const handleResetDemoData = async () => {
-    if (!confirm("Reload Shree Krishna FMCG & Agro Distributors demo dataset?")) return;
-    setLoading(true);
+  const handleSignOut = async () => {
     try {
-      await fetch("/api/seed", { method: "POST" });
-      window.location.reload();
+      await signOutFirebase();
+      await fetch("/api/auth/logout", { method: "POST" });
     } catch (err) {
       console.error(err);
-      setLoading(false);
+    }
+    setSession(null);
+    window.location.reload();
+  };
+
+  const handleGoogleSignIn = async () => {
+    setLoginError(null);
+    setLoginLoading(true);
+
+    try {
+      if (!isFirebaseConfigured) {
+        throw new Error(
+          "Firebase is not configured yet. Please configure your Firebase environment variables or sign in with your email below."
+        );
+      }
+
+      const firebaseUser = await signInWithGoogle();
+      if (firebaseUser) {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            email: firebaseUser.email,
+            name: firebaseUser.displayName,
+            avatar: firebaseUser.photoURL,
+            googleId: firebaseUser.uid,
+          }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Login failed");
+
+        if (data.needsOnboarding) {
+          setIsOnboardingOpen(true);
+        } else {
+          loadAppData();
+        }
+      }
+    } catch (err: any) {
+      setLoginError(err.message || "Failed to sign in with Google");
+    } finally {
+      setLoginLoading(false);
+    }
+  };
+
+  const handleEmailSignIn = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loginEmail.trim()) {
+      setLoginError("Please enter your email address");
+      return;
+    }
+
+    setLoginError(null);
+    setLoginLoading(true);
+
+    try {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          email: loginEmail.trim(),
+          name: loginName.trim() || loginEmail.split("@")[0],
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Authentication failed");
+
+      if (data.needsOnboarding) {
+        setIsOnboardingOpen(true);
+      } else {
+        loadAppData();
+      }
+    } catch (err: any) {
+      setLoginError(err.message || "Authentication failed");
+    } finally {
+      setLoginLoading(false);
     }
   };
 
@@ -129,37 +207,47 @@ export default function App() {
 
   if (loading) {
     return (
-      <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <div className="flex h-screen items-center justify-center bg-slate-50 dark:bg-slate-950 font-sans">
         <div className="text-center space-y-3">
           <div className="w-10 h-10 border-3 border-emerald-600 border-t-transparent rounded-full animate-spin mx-auto" />
           <h2 className="text-base font-bold text-slate-800 dark:text-white">VyaparOS Bharat</h2>
-          <p className="text-xs text-slate-500">Connecting PostgreSQL and multi-tenant workspace...</p>
+          <p className="text-xs text-slate-500">Loading business workspace...</p>
         </div>
       </div>
     );
   }
 
+  // Real Authentication Screen (No demo buttons, no fake personas)
   if (!session) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-slate-100 dark:bg-slate-950 p-4 font-sans text-slate-900 dark:text-slate-100">
-        <div className="w-full max-w-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
+        <div className="w-full max-w-md bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-3xl p-6 sm:p-8 shadow-xl space-y-6">
           <div className="text-center space-y-2">
             <div className="w-12 h-12 bg-linear-to-br from-emerald-500 to-emerald-700 text-white rounded-2xl flex items-center justify-center font-black text-2xl mx-auto shadow-md">
               V
             </div>
-            <h1 className="text-xl sm:text-2xl font-black tracking-tight text-slate-900 dark:text-white">
+            <h1 className="text-2xl font-black tracking-tight text-slate-900 dark:text-white">
               Vyapar<span className="text-emerald-600 dark:text-emerald-400">OS</span> Bharat
             </h1>
-            <p className="text-xs text-slate-500 max-w-sm mx-auto">
-              Multi-Industry Business Operating System for Indian Wholesalers, Distributors & Retailers
+            <p className="text-xs text-slate-500 max-w-xs mx-auto">
+              Business Operating System for Indian Wholesalers, Distributors & Retailers
             </p>
           </div>
 
-          <div className="space-y-3">
+          {loginError && (
+            <div className="flex items-center gap-2 p-3 text-xs bg-rose-50 text-rose-700 dark:bg-rose-950/40 dark:text-rose-300 rounded-xl border border-rose-200 dark:border-rose-900">
+              <AlertCircle className="w-4 h-4 shrink-0" />
+              <span>{loginError}</span>
+            </div>
+          )}
+
+          <div className="space-y-4">
+            {/* Real Google Sign-In */}
             <button
               type="button"
-              onClick={() => setIsAuthModalOpen(true)}
-              className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-700 rounded-2xl font-bold text-xs shadow-xs transition-colors"
+              onClick={handleGoogleSignIn}
+              disabled={loginLoading}
+              className="w-full flex items-center justify-center gap-3 py-3 px-4 bg-white dark:bg-slate-800 hover:bg-slate-50 dark:hover:bg-slate-700 text-slate-800 dark:text-slate-100 border border-slate-300 dark:border-slate-700 rounded-2xl font-bold text-xs shadow-xs transition-colors disabled:opacity-50"
             >
               <svg className="w-4 h-4" viewBox="0 0 24 24">
                 <path
@@ -182,75 +270,58 @@ export default function App() {
               <span>Continue with Google Sign-In</span>
             </button>
 
-            <button
-              type="button"
-              onClick={async () => {
-                setLoading(true);
-                await fetch("/api/auth/demo-login", {
-                  method: "POST",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({}),
-                });
-                loadAppData();
-              }}
-              className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-2xl text-xs transition-colors shadow-xs"
-            >
-              Enter Shree Krishna FMCG Wholesale Demo Workspace
-            </button>
-          </div>
-
-          <div className="pt-2 border-t border-slate-100 dark:border-slate-800">
-            <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 block mb-2">
-              Or Sign In as Role (RBAC Testing):
-            </span>
-            <div className="grid grid-cols-2 gap-2 text-xs">
-              {availablePersonas.map((usr) => (
-                <button
-                  key={usr.id}
-                  type="button"
-                  onClick={async () => {
-                    setLoading(true);
-                    await fetch("/api/auth/demo-login", {
-                      method: "POST",
-                      headers: { "Content-Type": "application/json" },
-                      body: JSON.stringify({ userId: usr.id }),
-                    });
-                    loadAppData();
-                  }}
-                  className="p-2.5 rounded-xl border border-slate-200 dark:border-slate-700 text-left hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors"
-                >
-                  <p className="font-bold line-clamp-1">{usr.name}</p>
-                  <p className="text-[10px] text-slate-400 capitalize">
-                    {usr.email.split("@")[0].split(".")[0]}
-                  </p>
-                </button>
-              ))}
+            <div className="relative flex py-1 items-center">
+              <div className="grow border-t border-slate-200 dark:border-slate-800"></div>
+              <span className="shrink mx-3 text-slate-400 text-[10px] uppercase font-bold tracking-wider">
+                Or Sign In with Email
+              </span>
+              <div className="grow border-t border-slate-200 dark:border-slate-800"></div>
             </div>
-          </div>
 
-          <div className="text-center pt-2">
-            <button
-              type="button"
-              onClick={() => setIsOnboardingOpen(true)}
-              className="text-xs font-semibold text-emerald-600 dark:text-emerald-400 hover:underline"
-            >
-              + Create New Business Workspace (First-Time Onboarding)
-            </button>
+            {/* Real Email Sign-In / Register Form */}
+            <form onSubmit={handleEmailSignIn} className="space-y-3">
+              <div>
+                <label className="block text-slate-600 dark:text-slate-300 font-medium mb-1 text-xs">
+                  Full Name
+                </label>
+                <input
+                  type="text"
+                  placeholder="Enter your name"
+                  value={loginName}
+                  onChange={(e) => setLoginName(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                />
+              </div>
+
+              <div>
+                <label className="block text-slate-600 dark:text-slate-300 font-medium mb-1 text-xs">
+                  Email Address *
+                </label>
+                <input
+                  type="email"
+                  placeholder="name@business.in"
+                  value={loginEmail}
+                  onChange={(e) => setLoginEmail(e.target.value)}
+                  className="w-full px-3 py-2 bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl text-xs focus:ring-2 focus:ring-emerald-500 focus:outline-hidden"
+                  required
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={loginLoading}
+                className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs transition-colors shadow-xs disabled:opacity-50"
+              >
+                {loginLoading ? "Authenticating..." : "Sign In / Register"}
+              </button>
+            </form>
           </div>
         </div>
-
-        <AuthModal
-          isOpen={isAuthModalOpen}
-          onClose={() => setIsAuthModalOpen(false)}
-          currentUser={null}
-          onLoginSuccess={() => loadAppData()}
-          onLogoutSuccess={() => loadAppData()}
-        />
 
         <OnboardingModal
           isOpen={isOnboardingOpen}
           onClose={() => setIsOnboardingOpen(false)}
-          userName="New User"
+          userName={loginName || loginEmail.split("@")[0]}
           onComplete={() => loadAppData()}
         />
       </div>
@@ -273,12 +344,10 @@ export default function App() {
         <Navbar
           session={session}
           businesses={businesses}
-          availablePersonas={availablePersonas}
           onOpenNewSale={() => setIsNewSaleOpen(true)}
           onOpenAiAssistant={() => setIsAiAssistantOpen(true)}
           onOpenNewBusiness={() => setIsNewBusinessOpen(true)}
-          onResetDemoData={handleResetDemoData}
-          onOpenAuth={() => setIsAuthModalOpen(true)}
+          onSignOut={handleSignOut}
         />
 
         {/* View Component Container */}
@@ -345,7 +414,7 @@ export default function App() {
           {activeTab === "team" && <TeamView currentRole={session?.role || "owner"} />}
 
           {activeTab === "settings" && (
-            <SettingsView session={session} onResetDemoData={handleResetDemoData} />
+            <SettingsView session={session} onSignOut={handleSignOut} />
           )}
         </main>
       </div>
@@ -407,7 +476,7 @@ export default function App() {
               ))}
             </div>
 
-            <div className="pt-4 border-t border-slate-100 dark:border-slate-800">
+            <div className="pt-4 border-t border-slate-100 dark:border-slate-800 space-y-2">
               <button
                 type="button"
                 onClick={() => {
@@ -417,6 +486,14 @@ export default function App() {
                 className="w-full flex items-center justify-center gap-2 p-2.5 bg-emerald-50 text-emerald-800 rounded-xl font-bold text-xs"
               >
                 <Sparkles className="w-4 h-4 text-emerald-600" /> Vyapar AI Assistant
+              </button>
+
+              <button
+                type="button"
+                onClick={handleSignOut}
+                className="w-full flex items-center justify-center gap-2 p-2.5 text-rose-600 hover:bg-rose-50 rounded-xl font-bold text-xs"
+              >
+                Sign Out
               </button>
             </div>
           </div>
@@ -497,14 +574,9 @@ export default function App() {
         isOpen={isAuthModalOpen}
         onClose={() => setIsAuthModalOpen(false)}
         currentUser={session}
-        onLoginSuccess={(user, needsOnboarding) => {
-          if (needsOnboarding) {
-            setIsOnboardingOpen(true);
-          } else {
-            loadAppData();
-          }
-        }}
+        onLoginSuccess={() => loadAppData()}
         onLogoutSuccess={() => {
+          setSession(null);
           loadAppData();
         }}
       />
@@ -512,10 +584,8 @@ export default function App() {
       <OnboardingModal
         isOpen={isOnboardingOpen}
         onClose={() => setIsOnboardingOpen(false)}
-        userName={session?.name}
-        onComplete={() => {
-          loadAppData();
-        }}
+        userName={session?.name || loginName}
+        onComplete={() => loadAppData()}
       />
     </div>
   );

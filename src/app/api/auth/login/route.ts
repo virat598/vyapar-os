@@ -5,6 +5,8 @@ import { users, businesses, memberships, categories, auditLogs } from "@/db/sche
 import { eq } from "drizzle-orm";
 import { memoryStore } from "@/lib/memoryStore";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: Request) {
   try {
     const body = await req.json();
@@ -56,7 +58,7 @@ export async function POST(req: Request) {
         activeBusinessId = userMems[0].businessId;
       } else {
         const newBizId = "biz_" + Math.random().toString(36).substring(2, 9);
-        const bizName = name ? `${name}'s Trading Co` : "My Wholesale Business";
+        const bizName = name ? `${name.trim()}'s Business` : "My Business Enterprise";
 
         await db.insert(businesses).values({
           id: newBizId,
@@ -116,15 +118,31 @@ export async function POST(req: Request) {
       if (userMem) {
         activeBusinessId = userMem.businessId;
       } else {
-        activeBusinessId = memoryStore.businesses[0]?.id || "biz_krishna_fmcg";
+        const newBizId = "biz_" + Math.random().toString(36).substring(2, 9);
+        const bizName = name ? `${name.trim()}'s Business` : "My Business Enterprise";
+        const newBiz = {
+          id: newBizId,
+          name: bizName,
+          legalName: bizName,
+          industry: "Distributors and wholesalers",
+          currency: "INR",
+          timezone: "Asia/Kolkata",
+          invoicePrefix: "INV-",
+          invoiceCounter: 1001,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+        };
+        memoryStore.businesses.push(newBiz);
         memoryStore.memberships.push({
           id: "mem_" + Math.random().toString(36).substring(2, 9),
-          businessId: activeBusinessId,
+          businessId: newBizId,
           userId: existingUser.id,
           role: "owner",
           status: "active",
           createdAt: new Date(),
         });
+        activeBusinessId = newBizId;
+        needsOnboarding = true;
       }
 
       await setSessionCookie(existingUser.id, activeBusinessId);

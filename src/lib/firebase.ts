@@ -9,22 +9,27 @@ import {
 } from "firebase/auth";
 import { getFirestore } from "firebase/firestore";
 
+function sanitizeEnv(val?: string): string {
+  if (!val) return "";
+  return val.replace(/^[\x22\x27\\]+|[\x22\x27\\]+$/g, "").trim();
+}
+
+const rawApiKey = sanitizeEnv(process.env.NEXT_PUBLIC_FIREBASE_API_KEY);
+const rawProjectId = sanitizeEnv(process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID);
+const rawAuthDomain = sanitizeEnv(process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN);
+const rawStorageBucket = sanitizeEnv(process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET);
+const rawMessagingSenderId = sanitizeEnv(process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID);
+const rawAppId = sanitizeEnv(process.env.NEXT_PUBLIC_FIREBASE_APP_ID);
+const rawMeasurementId = sanitizeEnv(process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID);
+
 export const firebaseConfig = {
-  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY?.trim() || "",
-  authDomain:
-    process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN?.trim() ||
-    (process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim()
-      ? `${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID.trim()}.firebaseapp.com`
-      : ""),
-  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim() || "",
-  storageBucket:
-    process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET?.trim() ||
-    (process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID?.trim()
-      ? `${process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID.trim()}.appspot.com`
-      : ""),
-  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID?.trim() || "",
-  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID?.trim() || "",
-  measurementId: process.env.NEXT_PUBLIC_FIREBASE_MEASUREMENT_ID?.trim() || "",
+  apiKey: rawApiKey,
+  authDomain: rawAuthDomain || (rawProjectId ? `${rawProjectId}.firebaseapp.com` : ""),
+  projectId: rawProjectId,
+  storageBucket: rawStorageBucket || (rawProjectId ? `${rawProjectId}.appspot.com` : ""),
+  messagingSenderId: rawMessagingSenderId,
+  appId: rawAppId,
+  measurementId: rawMeasurementId,
 };
 
 export const isFirebaseConfigured = Boolean(

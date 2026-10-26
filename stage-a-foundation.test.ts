@@ -1,13 +1,6 @@
 /**
  * Stage A Security & Tenancy Verification Test Suite
- * Tests:
- * 1. Unauthenticated request rejection (401)
- * 2. Session verification, cookie decoding, and membership validation
- * 3. Cross-tenant read isolation (Tenant A cannot read Tenant B's data)
- * 4. Cross-tenant mutation isolation (Tenant A cannot use or overwrite Tenant B's records)
- * 5. Workspace switching authorization enforcement
- * 6. Role-based access control (RBAC) permission boundaries
- * 7. Owner protection against unauthorized demotion or removal
+ * Self-contained isolated fixtures (Clean setup and teardown)
  */
 
 import { db } from "../src/db";
@@ -18,7 +11,6 @@ import {
   invoices,
   invoiceItems,
   customers,
-  products,
 } from "../src/db/schema";
 import { eq, and } from "drizzle-orm";
 import {
@@ -45,22 +37,28 @@ function assert(condition: boolean, testName: string) {
 async function runTestSuite() {
   console.log("\n=======================================================");
   console.log("  STAGE A AUDIT: SECURITY, TENANCY & RBAC TEST SUITE");
-  console.log("=======================================================\n");
+  console.log("=======================================================");
 
-  const TENANT_A_BIZ = "biz_krishna_fmcg";
-  const TENANT_A_OWNER = "usr_rajesh_owner";
-  const TENANT_A_SALES = "usr_deepak_sales";
+  const TENANT_A_BIZ = "biz_test_tenant_a";
+  const TENANT_A_OWNER = "usr_test_tenant_a_owner";
 
   const TENANT_B_BIZ = "biz_test_isolated_b";
   const TENANT_B_USER = "usr_test_tenant_b";
 
   try {
     // -------------------------------------------------------------
-    // SETUP TEST FIXTURES FOR TENANT B
+    // SETUP TEST FIXTURES
     // -------------------------------------------------------------
-    console.log("[Setup] Provisioning isolated Tenant B fixtures...");
+    console.log("[Setup] Provisioning isolated test fixtures...");
 
-    // Clean any previous test artifacts
+    // Clean any previous artifacts
+    await db.delete(invoiceItems).where(eq(invoiceItems.businessId, TENANT_A_BIZ));
+    await db.delete(invoices).where(eq(invoices.businessId, TENANT_A_BIZ));
+    await db.delete(customers).where(eq(customers.businessId, TENANT_A_BIZ));
+    await db.delete(memberships).where(eq(memberships.businessId, TENANT_A_BIZ));
+    await db.delete(businesses).where(eq(businesses.id, TENANT_A_BIZ));
+    await db.delete(users).where(eq(users.id, TENANT_A_OWNER));
+
     await db.delete(invoiceItems).where(eq(invoiceItems.businessId, TENANT_B_BIZ));
     await db.delete(invoices).where(eq(invoices.businessId, TENANT_B_BIZ));
     await db.delete(customers).where(eq(customers.businessId, TENANT_B_BIZ));
@@ -68,7 +66,28 @@ async function runTestSuite() {
     await db.delete(businesses).where(eq(businesses.id, TENANT_B_BIZ));
     await db.delete(users).where(eq(users.id, TENANT_B_USER));
 
-    // Insert Tenant B user and business
+    // Provision Tenant A
+    await db.insert(users).values({
+      id: TENANT_A_OWNER,
+      email: "alice@tenant-a.com",
+      name: "Alice Owner",
+    });
+
+    await db.insert(businesses).values({
+      id: TENANT_A_BIZ,
+      name: "Alice Wholesale Trading",
+      industry: "Distributors and wholesalers",
+    });
+
+    await db.insert(memberships).values({
+      id: "mem_tenant_a_owner",
+      businessId: TENANT_A_BIZ,
+      userId: TENANT_A_OWNER,
+      role: "owner",
+      status: "active",
+    });
+
+    // Provision Tenant B
     await db.insert(users).values({
       id: TENANT_B_USER,
       email: "bob@isolated-tenant-b.com",
@@ -111,10 +130,10 @@ async function runTestSuite() {
       balanceAmount: 5000000,
     });
 
-    console.log("[Setup] Tenant B fixtures created.\n");
+    console.log("[Setup] Fixtures created successfully.\n");
 
     // -------------------------------------------------------------
-    // 1. UNAUTHENTICATED & FORGED PAYLOAD CHECKS
+    // 1. AUTHENTICATION & COOKIE VERIFICATION
     // -------------------------------------------------------------
     console.log("--- 1. Authentication & Cookie Verification ---");
 
@@ -145,17 +164,15 @@ async function runTestSuite() {
     // -------------------------------------------------------------
     console.log("\n--- 2. Cross-Tenant Access Enforcement ---");
 
-    // Tenant A user attempting to verify against Tenant B's business
     const crossTenantPayload = await verifySessionPayload({
       userId: TENANT_A_OWNER,
-      businessId: TENANT_B_BIZ, // User A is NOT a member of Tenant B!
+      businessId: TENANT_B_BIZ,
     });
     assert(
       crossTenantPayload === null,
       "User A cannot claim or access Tenant B workspace (Membership check fails)"
     );
 
-    // Tenant A querying invoices: ensure Tenant B invoices are NOT visible
     const tenantAInvoices = await db
       .select()
       .from(invoices)
@@ -164,7 +181,6 @@ async function runTestSuite() {
     const leakFound = tenantAInvoices.some((inv) => inv.businessId === TENANT_B_BIZ || inv.id === privateInvId);
     assert(!leakFound, "Tenant A invoice queries strictly exclude Tenant B records");
 
-    // Tenant A querying single invoice by ID with businessId filter
     const unauthorizedInvRead = (
       await db
         .select()
@@ -177,7 +193,6 @@ async function runTestSuite() {
       "Tenant A cannot fetch Tenant B invoice by ID (Returns 404 / Not Found)"
     );
 
-    // Tenant A querying customer ledger of Tenant B
     const unauthorizedCustRead = (
       await db
         .select()
@@ -234,7 +249,7 @@ async function runTestSuite() {
     assert(accountantPerms.canManageProducts === false, "Accountant cannot modify product catalog");
 
     // -------------------------------------------------------------
-    // 5. OWNER DEMOTION & TAMPERING PROTECTION
+    // 5. OWNER PROTECTION SAFEGUARDS
     // -------------------------------------------------------------
     console.log("\n--- 5. Owner Protection Safeguards ---");
 
@@ -248,7 +263,6 @@ async function runTestSuite() {
 
     assert(ownerMembership.role === "owner", "Owner membership verified in workspace");
 
-    // Verify simulated non-owner trying to demote owner is blocked
     const simulatedActorRole: Role = "manager";
     const canActorModifyOwner =
       ROLE_PERMISSIONS[simulatedActorRole].canManageTeam && (simulatedActorRole as string) === "owner";
@@ -261,6 +275,13 @@ async function runTestSuite() {
     // TEARDOWN FIXTURES
     // -------------------------------------------------------------
     console.log("\n[Teardown] Cleaning up isolated test fixtures...");
+    await db.delete(invoiceItems).where(eq(invoiceItems.businessId, TENANT_A_BIZ));
+    await db.delete(invoices).where(eq(invoices.businessId, TENANT_A_BIZ));
+    await db.delete(customers).where(eq(customers.businessId, TENANT_A_BIZ));
+    await db.delete(memberships).where(eq(memberships.businessId, TENANT_A_BIZ));
+    await db.delete(businesses).where(eq(businesses.id, TENANT_A_BIZ));
+    await db.delete(users).where(eq(users.id, TENANT_A_OWNER));
+
     await db.delete(invoiceItems).where(eq(invoiceItems.businessId, TENANT_B_BIZ));
     await db.delete(invoices).where(eq(invoices.businessId, TENANT_B_BIZ));
     await db.delete(customers).where(eq(customers.businessId, TENANT_B_BIZ));

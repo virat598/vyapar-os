@@ -211,11 +211,11 @@ export function InvoicePrintModal({ isOpen, onClose, invoiceId }: InvoicePrintMo
             <div className="grid grid-cols-2 gap-6 pt-3">
               <div className="space-y-3">
                 <div className="p-3 bg-slate-50 rounded-lg border border-slate-200">
-                  <p className="text-[10px] font-bold uppercase text-slate-500 mb-1">BANK DETAILS FOR PAYMENT</p>
-                  <p className="font-semibold text-slate-800">Bank: HDFC Bank Ltd (Market Yard Branch)</p>
-                  <p className="text-slate-600">A/C No: <strong>50200088912345</strong></p>
-                  <p className="text-slate-600">IFSC Code: <strong>HDFC0001234</strong></p>
-                  <p className="text-slate-600">UPI ID: <strong>krishnadist@hdfcbank</strong></p>
+                  <p className="text-[10px] font-bold uppercase text-slate-500 mb-1">BUSINESS & PAYMENT DETAILS</p>
+                  <p className="font-semibold text-slate-800">{data.business.name}</p>
+                  <p className="text-slate-600">GSTIN: <strong>{data.business.gstin || "Not specified"}</strong></p>
+                  <p className="text-slate-600">Phone: <strong>{data.business.phone || "On file"}</strong></p>
+                  <p className="text-slate-600">Payment Modes: <strong>UPI, NEFT/RTGS, Cash, Cheque</strong></p>
                 </div>
                 <div className="text-[10px] text-slate-500 leading-relaxed">
                   <p><strong>Declaration:</strong> We declare that this invoice shows the actual price of the goods described and that all particulars are true and correct.</p>

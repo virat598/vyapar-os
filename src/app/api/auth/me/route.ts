@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getCurrentSession } from "@/lib/auth";
 import { db } from "@/db";
-import { businesses, memberships, users } from "@/db/schema";
+import { businesses, memberships } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { ROLE_PERMISSIONS } from "@/lib/types";
 import { memoryStore } from "@/lib/memoryStore";
@@ -12,29 +12,8 @@ export async function GET() {
   try {
     const session = await getCurrentSession();
 
-    let allUsers: any[] = [];
-    try {
-      allUsers = await db
-        .select({
-          id: users.id,
-          name: users.name,
-          email: users.email,
-          phone: users.phone,
-          avatar: users.avatar,
-        })
-        .from(users);
-    } catch {
-      allUsers = memoryStore.users.map((u) => ({
-        id: u.id,
-        name: u.name,
-        email: u.email,
-        phone: u.phone,
-        avatar: u.avatar,
-      }));
-    }
-
     if (!session) {
-      return NextResponse.json({ authenticated: false, session: null, availablePersonas: allUsers }, { status: 401 });
+      return NextResponse.json({ authenticated: false, session: null }, { status: 401 });
     }
 
     let userBusinesses: any[] = [];
@@ -73,7 +52,6 @@ export async function GET() {
       session,
       permissions,
       businesses: userBusinesses,
-      availablePersonas: allUsers,
     });
   } catch (error) {
     console.error("Error in /api/auth/me:", error);
